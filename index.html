@@ -1,0 +1,526 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0d10">
+<title>Smart Parking</title>
+<style>
+:root{
+  --bg:#0b0d10; --panel:#14171c; --border:#262a31; --asphalt:#1b1e23;
+  --line:#e9ecef; --muted:#8b93a1; --text:#f1f3f5;
+  --free:#22c55e; --full:#ef4444; --accent:#facc15; --route:#22d3ee;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--bg)}
+body{color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  min-height:100vh;display:flex;justify-content:center;padding:16px;-webkit-tap-highlight-color:transparent}
+.app{width:100%;max-width:440px;display:flex;flex-direction:column;gap:12px}
+
+header{display:flex;justify-content:space-between;align-items:center;gap:10px}
+h1{font-size:1.15rem;letter-spacing:.01em}
+h1 small{display:block;font-size:.72rem;color:var(--muted);font-weight:500;margin-top:2px}
+.pill{font-size:.72rem;padding:6px 11px;border-radius:999px;background:var(--panel);
+  display:flex;align-items:center;gap:7px;border:1px solid var(--border);white-space:nowrap}
+.pill i{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.pill.live i{background:var(--free);animation:pulse 1.6s infinite}
+.pill.off i{background:var(--full)}
+.pill.demo i{background:var(--accent)}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(34,197,94,.6)}70%{box-shadow:0 0 0 7px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}
+
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.stat{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:10px 12px}
+.stat b{display:block;font-size:1.55rem;font-variant-numeric:tabular-nums;line-height:1.1}
+.stat span{font-size:.66rem;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}
+.stat.free b{color:var(--free)} .stat.full b{color:var(--full)}
+
+/* ---- route card ---- */
+.route{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:12px 14px;
+  display:flex;flex-direction:column;gap:8px}
+.route .kicker{font-size:.62rem;letter-spacing:.12em;color:var(--muted);text-transform:uppercase;font-weight:700}
+.route .main{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;min-height:2rem}
+.route .main b{font-size:1.75rem;line-height:1;color:var(--route);letter-spacing:.02em}
+.route .main .dist{font-size:.95rem;font-weight:700;font-variant-numeric:tabular-nums}
+.route .main .dist small{font-size:.62rem;color:var(--muted);font-weight:600;margin-left:3px}
+.route .main .none{font-size:.95rem;font-weight:700;color:var(--muted)}
+.route .steps{font-size:.78rem;color:var(--muted);line-height:1.4;min-height:1.1em}
+.route .steps.alert{color:var(--accent)}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:9px;overflow:hidden;align-self:flex-start}
+.seg button{background:transparent;color:var(--muted);border:0;padding:6px 11px;font-size:.7rem;font-weight:700;
+  cursor:pointer;font-family:inherit}
+.seg button.on{background:var(--route);color:#06222a}
+
+.lot{background:var(--asphalt);border-radius:18px;overflow:hidden;border:1px solid var(--border)}
+.building{background:#f1f3f5;color:#111;text-align:center;padding:8px 0 6px;font-weight:800;
+  font-size:.78rem;letter-spacing:.28em}
+.building em{display:block;width:70px;margin:4px auto 0;border-top:3px solid var(--free);
+  font-style:normal;font-size:.55rem;letter-spacing:.12em;font-weight:600;padding-top:2px;color:#444}
+
+.rows{position:relative;display:grid;grid-template-columns:1fr 58px 1fr;padding:16px 10px}
+.col{display:flex;flex-direction:column}
+.slot{height:66px;position:relative;border-top:2px solid var(--line);display:flex;align-items:center;
+  justify-content:center;transition:background-color .35s}
+.col .slot:last-child{border-bottom:2px solid var(--line)}
+.col.left .slot{border-left:2px solid var(--line)}
+.col.right .slot{border-right:2px solid var(--line)}
+.slot .label{position:absolute;top:4px;font-size:.6rem;color:var(--muted);font-weight:700;letter-spacing:.05em}
+.col.left .label{left:6px} .col.right .label{right:6px}
+
+.carwrap{width:74%;max-width:104px;transition:transform .5s cubic-bezier(.2,.8,.2,1),opacity .35s}
+.carwrap svg{display:block;width:100%;height:auto;filter:drop-shadow(0 3px 4px rgba(0,0,0,.5))}
+.col.right .carwrap svg{transform:scaleX(-1)}
+.slot:not(.occupied) .carwrap{opacity:0}
+.col.left  .slot:not(.occupied) .carwrap{transform:translateX(45px)}
+.col.right .slot:not(.occupied) .carwrap{transform:translateX(-45px)}
+
+.freebox{position:absolute;display:flex;flex-direction:column;align-items:center;gap:1px;
+  opacity:0;transition:opacity .3s;pointer-events:none}
+.slot:not(.occupied) .freebox{opacity:1}
+.freetag{font-weight:800;font-size:.85rem;letter-spacing:.18em;color:var(--free)}
+.fd{font-size:.62rem;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums;min-height:.8em}
+
+.neartag{position:absolute;top:4px;left:50%;transform:translateX(-50%);font-size:.5rem;font-weight:800;
+  letter-spacing:.12em;color:#06222a;background:var(--route);padding:1px 6px;border-radius:6px;display:none}
+.slot.target .neartag{display:block}
+.slot.target{background:rgba(34,211,238,.13);box-shadow:inset 0 0 0 2px var(--route)}
+.slot.target .fd{color:var(--route)}
+
+.slot .tag{position:absolute;bottom:4px;font-size:.56rem;font-weight:700;padding:1px 6px;border-radius:6px;
+  background:rgba(0,0,0,.45);color:var(--muted);letter-spacing:.03em}
+.slot .tag:empty{display:none}
+.col.left .tag{left:6px} .col.right .tag{right:6px}
+.slot .tag.live{color:var(--text)}
+.slot .tag.live::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;
+  margin-right:4px;vertical-align:1px;background:var(--free)}
+.slot.occupied .tag.live::before{background:var(--full)}
+.slot.live:not(.occupied):not(.target){background:rgba(34,197,94,.13)}
+.slot.live.occupied{background:rgba(239,68,68,.15)}
+.demo-mode .slot.live{cursor:pointer}
+
+.lane{position:relative;display:flex;flex-direction:column;justify-content:space-between;align-items:center;
+  padding:10px 0;color:var(--line);font-size:1.3rem}
+.lane::before{content:"";position:absolute;top:0;bottom:0;left:50%;width:2px;transform:translateX(-50%);
+  background:repeating-linear-gradient(to bottom,var(--accent) 0 12px,transparent 12px 24px);opacity:.7}
+.lane .arrows{display:flex;gap:16px;position:relative;opacity:.85;transition:opacity .3s}
+.rows.routing .lane .arrows{opacity:.12}
+
+/* ---- route arrows ---- */
+.route-svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+.route-base{fill:none;stroke:var(--route);stroke-width:6;stroke-linecap:round;stroke-linejoin:round;opacity:.22}
+.route-start{fill:var(--route);stroke:#06222a;stroke-width:2}
+.route-head{fill:var(--route)}
+.chev{fill:none;stroke:var(--route);stroke-width:3;stroke-linecap:round;stroke-linejoin:round;
+  opacity:.2;animation:flow 1.6s linear infinite}
+@keyframes flow{0%{opacity:.2}18%{opacity:1}55%{opacity:.25}100%{opacity:.2}}
+@media (prefers-reduced-motion: reduce){.chev{animation:none;opacity:.9}}
+
+.gates{display:flex;justify-content:space-between;gap:8px;padding:0 10px 14px}
+.gate{display:flex;align-items:center;gap:8px;background:#0e1013;border:1px solid var(--border);
+  border-radius:10px;padding:8px 12px;font-size:.72rem;font-weight:700;letter-spacing:.06em}
+.light{width:12px;height:12px;border-radius:50%;background:var(--free);box-shadow:0 0 10px var(--free);transition:all .3s}
+.gate.closed .light{background:var(--full);box-shadow:0 0 10px var(--full)}
+.gate .sub{display:block;font-size:.6rem;color:var(--muted);font-weight:600;letter-spacing:.04em}
+
+.notice{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:11px 13px;
+  font-size:.78rem;color:var(--muted);line-height:1.45;display:none}
+.notice.show{display:block}
+.notice strong{color:var(--text)}
+.notice button{margin-top:8px;background:var(--accent);color:#111;border:0;border-radius:8px;
+  padding:7px 12px;font-weight:700;font-size:.75rem;cursor:pointer}
+footer{font-size:.68rem;color:var(--muted);text-align:center;font-variant-numeric:tabular-nums;
+  display:flex;flex-direction:column;gap:6px;align-items:center}
+footer .link{background:none;border:1px solid var(--border);color:var(--muted);border-radius:8px;
+  padding:5px 10px;font-size:.66rem;font-weight:600;cursor:pointer;font-family:inherit}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <header>
+    <h1>Smart Parking<small>Real-time slot availability</small></h1>
+    <div class="pill" id="pill"><i></i><span id="pillText">Connecting…</span></div>
+  </header>
+
+  <div class="stats">
+    <div class="stat free"><b id="freeCount">–</b><span>Available</span></div>
+    <div class="stat full"><b id="fullCount">–</b><span>Occupied</span></div>
+    <div class="stat"><b>10</b><span>Total</span></div>
+  </div>
+
+  <div class="notice" id="notice"></div>
+
+  <div class="route" id="routeCard">
+    <div class="kicker" id="routeKicker">Nearest free slot</div>
+    <div class="main" id="routeMain"><span class="none">Waiting for sensors…</span></div>
+    <div class="steps" id="routeSteps"></div>
+    <div class="seg" role="group" aria-label="Start point">
+      <button type="button" id="startGate" class="on">Entry gate</button>
+      <button type="button" id="startDoor">Building door</button>
+    </div>
+  </div>
+
+  <div class="lot">
+    <div class="building">BUILDING<em>ENTRANCE</em></div>
+    <div class="rows" id="rows">
+      <div class="col left" id="colLeft"></div>
+      <div class="lane" id="lane"><div class="arrows"><span>↓</span><span>↑</span></div><div class="arrows"><span>↓</span><span>↑</span></div></div>
+      <div class="col right" id="colRight"></div>
+      <svg class="route-svg" id="routeSvg" aria-hidden="true"></svg>
+    </div>
+    <div class="gates">
+      <div class="gate" id="entryGate"><span class="light"></span><div>ENTRY<span class="sub" id="entryText">Open</span></div></div>
+      <div class="gate"><span class="light"></span><div>EXIT<span class="sub">Open</span></div></div>
+    </div>
+  </div>
+
+  <footer>
+    <div id="footer">Waiting for data…</div>
+    <button type="button" class="link" id="shuffleBtn">Shuffle sensor slots</button>
+  </footer>
+</div>
+
+<script>
+// ---------------------------------------------------------------------------
+//  Layout: 10 slots, A1..A5 on the left, B1..B5 on the right (row 1 = top).
+//  Two of them are LIVE (follow sensors S1 / S2); the server chooses which,
+//  at random. The other 8 are simulated.
+// ---------------------------------------------------------------------------
+const ROWS = 5;
+const IDS_LEFT  = ['A1','A2','A3','A4','A5'];
+const IDS_RIGHT = ['B1','B2','B3','B4','B5'];
+const ALL_IDS = IDS_LEFT.concat(IDS_RIGHT);
+const COLORS = {A1:'#67e8f9',A2:'#ec4899',A3:'#fde047',A4:'#2563eb',A5:'#ef4444',
+                B1:'#4ade80',B2:'#a78bfa',B3:'#d946ef',B4:'#9ca3af',B5:'#38bdf8'};
+const POLL_MS = 400;
+
+// Estimated real-world scale (metres) used for the distance figures.
+// Distance = entry -> first row + rows passed + half a row + lane centre -> slot centre.
+const SCALE = { entryToRows: 6, rowPitch: 2.7, lateral: 5.5 };
+
+// Demo-mode simulation (same rules as server.py)
+const SIM_OCC_FOR = [15, 40], SIM_FREE_FOR = [6, 20], SIM_START_OCC = 0.7;
+
+const sideOf = id => id[0] === 'A' ? 'left' : 'right';
+const rowOf  = id => Number(id.slice(1)) - 1;       // 0 (top) .. 4 (bottom)
+const rand   = (a, b) => a + Math.random() * (b - a);
+
+const carSVG = c => `
+<svg viewBox="0 0 100 50" aria-hidden="true">
+  <rect x="2" y="4" width="96" height="42" rx="13" fill="${c}"/>
+  <path d="M61 9 L76 12 Q81 25 76 38 L61 41 Z" fill="#0f172a" opacity=".78"/>
+  <path d="M17 11 L27 13 L27 37 L17 39 Q13 25 17 11 Z" fill="#0f172a" opacity=".7"/>
+  <rect x="29" y="12" width="31" height="26" rx="5" fill="#fff" opacity=".13"/>
+  <rect x="92" y="8" width="5" height="8" rx="2" fill="#fef9c3"/>
+  <rect x="92" y="34" width="5" height="8" rx="2" fill="#fef9c3"/>
+  <rect x="3" y="9" width="3" height="7" rx="1.5" fill="#7f1d1d"/>
+  <rect x="3" y="34" width="3" height="7" rx="1.5" fill="#7f1d1d"/>
+</svg>`;
+
+const $ = id => document.getElementById(id);
+const rowsEl = $('rows'), laneEl = $('lane'), svgEl = $('routeSvg');
+const els = {};
+ALL_IDS.forEach(id => {
+  const el = document.createElement('div');
+  el.className = 'slot occupied';
+  el.innerHTML = `<span class="label">${id}</span>
+    <span class="neartag">NEAREST</span>
+    <span class="freebox"><span class="freetag">FREE</span><span class="fd"></span></span>
+    <div class="carwrap">${carSVG(COLORS[id])}</div>
+    <span class="tag"></span>`;
+  el.addEventListener('click', () => {
+    if (mode !== 'demo' || !model) return;
+    const s = model.slots[id];
+    if (s && s.live) { demo.liveOcc[s.sensor] = !demo.liveOcc[s.sensor]; model = demoModel(); render(); }
+  });
+  $(sideOf(id) === 'left' ? 'colLeft' : 'colRight').appendChild(el);
+  els[id] = el;
+});
+
+// ---------------------------------------------------------------------------
+//  State
+// ---------------------------------------------------------------------------
+let mode = 'connecting';            // connecting | live | off | demo
+let model = null;                   // { slots: { id: {occ, live, sensor, dist} }, age }
+let fails = 0;
+let start = 'gate';                 // 'gate' (bottom) or 'door' (top)
+try { const v = localStorage.getItem('parking_start'); if (v === 'gate' || v === 'door') start = v; } catch (e) {}
+let routeKey = '';
+let lastTarget = null, alertTimer = null, alertText = '';
+
+function setNotice(html){
+  const n = $('notice');
+  n.innerHTML = html || '';
+  n.classList.toggle('show', !!html);
+}
+
+// ---------------------------------------------------------------------------
+//  Distance + directions
+// ---------------------------------------------------------------------------
+function routeInfo(id, from){
+  const r = rowOf(id);
+  const passed = from === 'gate' ? ROWS - 1 - r : r;       // rows driven past before turning in
+  const dist = SCALE.entryToRows + (passed + 0.5) * SCALE.rowPitch + SCALE.lateral;
+  return { id, passed, dist };
+}
+
+function stepsText(t){
+  // Left column is on the driver's left when driving up (from the gate), on the right when driving down.
+  const turn = ((sideOf(t.id) === 'left') === (start === 'gate')) ? 'left' : 'right';
+  const way = start === 'gate' ? 'up' : 'down';
+  if (t.passed === 0) return `Turn ${turn} into ${t.id} right away.`;
+  return `Go straight ${way} the lane, pass ${t.passed} row${t.passed > 1 ? 's' : ''}, then turn ${turn} into ${t.id}.`;
+}
+
+function pickNearest(free){
+  const scored = free.map(id => routeInfo(id, start));
+  scored.sort((a, b) =>
+    a.dist - b.dist ||
+    (sideOf(a.id) === 'left' ? 0 : 1) - (sideOf(b.id) === 'left' ? 0 : 1) ||
+    a.id.localeCompare(b.id));
+  return scored;
+}
+
+// ---------------------------------------------------------------------------
+//  Arrow route drawn over the lot
+// ---------------------------------------------------------------------------
+const SVGNS = 'http://www.w3.org/2000/svg';
+const mk = (name, attrs) => { const e = document.createElementNS(SVGNS, name); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
+
+function drawRoute(targetId){
+  svgEl.innerHTML = '';
+  rowsEl.classList.toggle('routing', !!targetId);
+  const rr = rowsEl.getBoundingClientRect();
+  svgEl.setAttribute('viewBox', `0 0 ${rr.width} ${rr.height}`);
+  if (!targetId) return;
+
+  const lane = laneEl.getBoundingClientRect();
+  const slot = els[targetId].getBoundingClientRect();
+  const x0 = lane.left - rr.left + lane.width / 2;
+  const y0 = start === 'gate' ? rr.height - 3 : 3;
+  const ty = slot.top - rr.top + slot.height / 2;
+  const left = sideOf(targetId) === 'left';
+  const tx = left ? slot.right - rr.left - 30 : slot.left - rr.left + 30;   // stop just inside the slot
+  const sy = ty < y0 ? -1 : 1, sx = tx > x0 ? 1 : -1, r = 14;
+
+  const d = `M ${x0} ${y0} L ${x0} ${ty - sy * r} Q ${x0} ${ty} ${x0 + sx * r} ${ty} L ${tx} ${ty}`;
+  const base = mk('path', { d, class: 'route-base' });
+  svgEl.appendChild(base);
+
+  const len = base.getTotalLength();
+  const step = 24, endPad = 14;
+  let i = 0;
+  for (let s = 16; s < len - endPad; s += step, i++) {
+    const p = base.getPointAtLength(s), q = base.getPointAtLength(s + 1);
+    const ang = Math.atan2(q.y - p.y, q.x - p.x) * 180 / Math.PI;
+    const g = mk('g', { transform: `translate(${p.x} ${p.y}) rotate(${ang})` });
+    g.appendChild(mk('path', { d: 'M -5 -6 L 3 0 L -5 6', class: 'chev', style: `animation-delay:${(i * 0.09).toFixed(2)}s` }));
+    svgEl.appendChild(g);
+  }
+  const e = base.getPointAtLength(len), e2 = base.getPointAtLength(len - 1);
+  const ea = Math.atan2(e.y - e2.y, e.x - e2.x) * 180 / Math.PI;
+  svgEl.appendChild(mk('polygon', { points: '-4,-8 10,0 -4,8', class: 'route-head', transform: `translate(${e.x} ${e.y}) rotate(${ea})` }));
+  svgEl.appendChild(mk('circle', { cx: x0, cy: y0, r: 6, class: 'route-start' }));
+}
+
+// ---------------------------------------------------------------------------
+//  Render
+// ---------------------------------------------------------------------------
+function distText(s){
+  if (mode === 'demo') return 'demo';
+  return s.dist == null ? '--' : (s.dist >= 999 ? 'clear' : s.dist + ' cm');
+}
+
+function render(){
+  const slots = model ? model.slots : null;
+  const showing = (mode === 'live' || mode === 'demo') && !!slots;
+  const free = [];
+
+  ALL_IDS.forEach(id => {
+    const s = slots ? slots[id] : null;
+    const occ = s ? s.occ : true;
+    const el = els[id];
+    el.classList.toggle('occupied', occ);
+    el.classList.toggle('live', !!(s && s.live));
+    const tag = el.querySelector('.tag');
+    if (s && s.live) { tag.className = 'tag live'; tag.textContent = `${s.sensor} · ${distText(s)}`; }
+    else             { tag.className = 'tag sim';  tag.textContent = slots ? 'SIM' : ''; }
+    if (!occ) free.push(id);
+  });
+
+  $('freeCount').textContent = slots ? free.length : '–';
+  $('fullCount').textContent = slots ? ALL_IDS.length - free.length : '–';
+  const gate = $('entryGate');
+  gate.classList.toggle('closed', !!slots && free.length === 0);
+  $('entryText').textContent = slots && free.length === 0 ? 'Lot full' : 'Open';
+
+  // ---- nearest slot ----
+  let scored = [], target = null;
+  if (showing && free.length) { scored = pickNearest(free); target = scored[0]; }
+  ALL_IDS.forEach(id => {
+    const el = els[id];
+    const sc = scored.find(x => x.id === id);
+    el.querySelector('.fd').textContent = sc ? `${Math.round(sc.dist)} m` : '';
+    el.classList.toggle('target', !!(target && target.id === id));
+  });
+
+  // re-route notice: the slot we were guiding to has just been taken
+  if (target && lastTarget && lastTarget !== target.id && !free.includes(lastTarget)) {
+    alertText = `${lastTarget} was just taken — new route to ${target.id}.`;
+    clearTimeout(alertTimer);
+    alertTimer = setTimeout(() => { alertText = ''; render(); }, 6000);
+  }
+  lastTarget = target ? target.id : null;
+
+  // ---- route card ----
+  const from = start === 'gate' ? 'entry gate' : 'building door';
+  $('routeKicker').textContent = `Nearest free slot · from ${from}`;
+  const main = $('routeMain'), steps = $('routeSteps');
+  if (target) {
+    main.innerHTML = `<b>${target.id}</b><span class="dist">≈ ${Math.round(target.dist)} m<small>est.</small></span>`;
+    steps.textContent = alertText || stepsText(target);
+    steps.className = 'steps' + (alertText ? ' alert' : '');
+  } else if (showing) {
+    main.innerHTML = '<span class="none">Lot full — no free slot</span>';
+    steps.textContent = ''; steps.className = 'steps';
+  } else {
+    main.innerHTML = '<span class="none">Waiting for sensors…</span>';
+    steps.textContent = ''; steps.className = 'steps';
+  }
+  $('startGate').classList.toggle('on', start === 'gate');
+  $('startDoor').classList.toggle('on', start === 'door');
+
+  // ---- arrows (only redraw when something changed, so the animation doesn't restart) ----
+  const rr = rowsEl.getBoundingClientRect();
+  const key = `${target ? target.id : '-'}|${start}|${Math.round(rr.width)}x${Math.round(rr.height)}`;
+  if (key !== routeKey) { routeKey = key; drawRoute(target ? target.id : null); }
+
+  // ---- header / footer ----
+  const pill = $('pill');
+  pill.className = 'pill ' + (mode === 'live' ? 'live' : mode === 'demo' ? 'demo' : mode === 'off' ? 'off' : '');
+  $('pillText').textContent = {live:'Live', demo:'Demo', off:'Offline', connecting:'Connecting…'}[mode];
+  $('app').classList.toggle('demo-mode', mode === 'demo');
+  $('footer').textContent =
+    mode === 'live' ? `2 live sensors · 8 simulated · last reading ${model && model.age != null ? model.age.toFixed(1) : '–'} s ago`
+    : mode === 'demo' ? 'Demo mode · tap the two sensor slots (tagged S1 / S2) to park or unpark a car'
+    : 'Waiting for data…';
+}
+
+// ---------------------------------------------------------------------------
+//  Demo mode (page opened as a file, or "Try demo mode"): everything simulated in the browser
+// ---------------------------------------------------------------------------
+const demo = { liveMap: {S1: null, S2: null}, liveOcc: {S1: false, S2: false}, sim: {}, timer: null };
+
+function demoPickLive(prev){
+  for (let n = 0; n < 500; n++) {
+    const l = IDS_LEFT[Math.floor(Math.random() * 5)], r = IDS_RIGHT[Math.floor(Math.random() * 5)];
+    if (Math.abs(Number(l.slice(1)) - Number(r.slice(1))) < 2) continue;
+    const pair = Math.random() < 0.5 ? [l, r] : [r, l];
+    if (prev && prev.includes(pair[0]) && prev.includes(pair[1])) continue;
+    return pair;
+  }
+  return ['A2', 'B5'];
+}
+function demoInit(){
+  const pair = demoPickLive(null);
+  demo.liveMap.S1 = pair[0]; demo.liveMap.S2 = pair[1];
+  const now = Date.now() / 1000;
+  ALL_IDS.forEach(id => {
+    const occ = Math.random() < SIM_START_OCC;
+    const span = occ ? SIM_OCC_FOR : SIM_FREE_FOR;
+    demo.sim[id] = { occ, until: now + rand(span[0], span[1]) };
+  });
+}
+function demoStep(){
+  const now = Date.now() / 1000;
+  ALL_IDS.forEach(id => {
+    const s = demo.sim[id];
+    if (now >= s.until) { s.occ = !s.occ; const span = s.occ ? SIM_OCC_FOR : SIM_FREE_FOR; s.until = now + rand(span[0], span[1]); }
+  });
+}
+function demoModel(){
+  const slots = {};
+  ALL_IDS.forEach(id => {
+    if (id === demo.liveMap.S1)      slots[id] = { live: true, sensor: 'S1', occ: demo.liveOcc.S1, dist: null };
+    else if (id === demo.liveMap.S2) slots[id] = { live: true, sensor: 'S2', occ: demo.liveOcc.S2, dist: null };
+    else                             slots[id] = { live: false, sensor: null, occ: demo.sim[id].occ, dist: null };
+  });
+  return { slots, age: null };
+}
+
+function showOffline(reason){
+  mode = 'off';
+  setNotice(`<strong>${reason}</strong><br>Check that <code>server.py</code> is running and your phone is on the same Wi-Fi.
+    <br><button id="demoBtn">Try demo mode</button>`);
+  $('demoBtn').onclick = startDemo;
+  render();
+}
+
+function startDemo(){
+  mode = 'demo';
+  setNotice('<strong>Demo mode.</strong> Everything here is simulated in your browser. Tap the two sensor slots to park or unpark a car. Reload the page to go back to live data.');
+  demoInit();
+  model = demoModel();
+  lastTarget = null; routeKey = '';
+  clearInterval(demo.timer);
+  demo.timer = setInterval(() => { if (mode === 'demo') { demoStep(); model = demoModel(); render(); } }, 1000);
+  render();
+}
+
+// ---------------------------------------------------------------------------
+//  Live polling
+// ---------------------------------------------------------------------------
+async function poll(){
+  if (mode === 'demo') return;
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 2000);
+  try {
+    const r = await fetch('/status', {cache:'no-store', signal:ctrl.signal});
+    const data = await r.json();
+    fails = 0;
+    if (!data.slots) {
+      showOffline('This page needs the new server.py (the old one is still running).');
+    } else if (data.connected) {
+      model = { slots: data.slots, age: data.age };
+      if (mode !== 'live') setNotice('');
+      mode = 'live';
+      render();
+    } else {
+      showOffline('Server is running, but no data from the Arduino.');
+    }
+  } catch (e) {
+    if (++fails >= 3) showOffline('Can\'t reach the parking server.');
+  } finally {
+    clearTimeout(t);
+    if (mode !== 'demo') setTimeout(poll, POLL_MS);
+  }
+}
+
+// ---------------------------------------------------------------------------
+//  Controls
+// ---------------------------------------------------------------------------
+function setStart(v){
+  start = v; routeKey = ''; lastTarget = null; alertText = '';
+  try { localStorage.setItem('parking_start', v); } catch (e) {}
+  render();
+}
+$('startGate').onclick = () => setStart('gate');
+$('startDoor').onclick = () => setStart('door');
+
+$('shuffleBtn').onclick = async () => {
+  lastTarget = null; routeKey = ''; alertText = '';
+  if (mode === 'demo') {
+    const pair = demoPickLive([demo.liveMap.S1, demo.liveMap.S2]);
+    demo.liveMap.S1 = pair[0]; demo.liveMap.S2 = pair[1];
+    model = demoModel(); render();
+    return;
+  }
+  try { await fetch('/shuffle', {method:'POST'}); } catch (e) {}
+};
+
+let resizeTimer;
+window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { routeKey = ''; render(); }, 120); });
+
+render();
+if (location.protocol === 'file:') startDemo(); else poll();
+</script>
+</body>
+</html>
